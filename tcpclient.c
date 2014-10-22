@@ -34,7 +34,8 @@
 /*****************************************************************************
 ** Constant definitions
 *****************************************************************************/
-#define TCP_PORT        10555
+#define TCP_PORT            503
+#define TX_RX_BUFFER_SIZE   32
 
 /*****************************************************************************
 ** Type definitions
@@ -44,6 +45,13 @@
 /*****************************************************************************
 ** Macros
 *****************************************************************************/
+#define cLOSEsOCKET(fd) \
+do                      \
+{                       \
+    PRINTF_DBG(RUNNING_LEVEL, "close soceket\n");   \
+    close(fd);                                      \
+    fd = 0;                                         \
+} while(0);
 
 
 /*****************************************************************************
@@ -83,16 +91,17 @@ static int tclient_init(void)
     servaddr.sin_addr.s_addr = inet_addr(dstIpStr);
     servaddr.sin_port = htons(TCP_PORT);
     
-    //fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL, 0) | O_NONBLOCK);
-
-    PRINTF_DBG(DEBUG_LEVEL, "try to connect to Server %s:%d\n", dstIpStr, TCP_PORT);
+    fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL, 0) | O_NONBLOCK);
+    
     ret = connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr));
     if ((ret == 0) || ((ret < 0) && (errno == 0 || errno == EINPROGRESS)))
     {
+        PRINTF_DBG(DEBUG_LEVEL, "try to connect to Server %s:%d ... OK\n", dstIpStr, TCP_PORT);
         ret = 0;
     }
     else
     {
+        PRINTF_DBG(DEBUG_LEVEL, "try to connect to Server %s:%d ... failed\n", dstIpStr, TCP_PORT);
         ret = (-1);
     }
 
@@ -100,29 +109,55 @@ static int tclient_init(void)
 }
 
 
-static void tclient_loop(void)
+static int tclient_loop(void)
 {
 #if 1
     if (0 >= sockfd)
     {
-        return;
+        return 0;
     }
 
     while(1)
     {
         int ret;
         static i = 0;
-
-        char txData[32] = {0};
+        int writenum;
+        int readnum;
+        char txData[TX_RX_BUFFER_SIZE] = {0};
+        char rxData[TX_RX_BUFFER_SIZE] = {0};
 
         sprintf(txData, "This is a book, %d", i++);
-        ret = write(sockfd, txData, strlen(txData));
-        if (ret != strlen(txData))
+        writenum = write(sockfd, txData, strlen(txData));
+        if (writenum != strlen(txData))
         {
             PRINTF_DBG(DEBUG_LEVEL, "ret = %d, %s\n", ret, strerror(errno));
         }
+
+        PRINTF_DBG(DEBUG_LEVEL, "writenum = %d\n", writenum);
+#if 1
+        readnum = recvfrom(sockfd, rxData, TX_RX_BUFFER_SIZE, 0, NULL, NULL);
+        PRINTF_DBG(DEBUG_LEVEL, "readnum = %d, %s\n", readnum, rxData);
+        if (readnum == 0) 
+        {
+            PRINTF_DBG(DEBUG_LEVEL, "client disconnected\n");
+            return (-1);
+        }
+#else
+        readnum = read(sockfd, rxData, TX_RX_BUFFER_SIZE);
+        PRINTF_DBG(DEBUG_LEVEL, "readnum = %d, %s\n", readnum, rxData);
+        if (0 < readnum)
+        {
+            PRINTF_DBG(DEBUG_LEVEL, "received data: %s\n", rxData);
+        }
+#endif
+
         sleep(1);
+        //usleep(1000);
+
+        return -1;
    }
+
+   return 0;
 #else
         while (fgets(sendline, 10000, stdin) != NULL)
         {
@@ -147,15 +182,23 @@ static void *tclient_thread(void * arg)
 
     PRINTF_DBG(RUNNING_LEVEL, "TCP client thread created, thread ID[%lu]\n", pthread_self());
 
-    ret = tclient_init();
-    if (0 > ret)
+    while (1)
     {
-        PRINTF_DBG(RUNNING_LEVEL, "close soceket\n");
-        close(sockfd);
-        sockfd = 0;
-    }
+        if (!sockfd)
+        {
+            ret = tclient_init();
+            if (0 > ret)
+            {
+                cLOSEsOCKET(sockfd);
+            }
+        }
 
-    tclient_loop();
+        ret = tclient_loop();
+        if (-1 == ret)
+        {
+            cLOSEsOCKET(sockfd);
+        }
+    }
 }
 
 

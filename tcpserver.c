@@ -82,23 +82,26 @@
 void *tserver_thread(void *arg)
 {
     int client = (int)arg;
-    int n;
+    int readnum;
+    int writenum;
     char s[100];
 
     PRINTF_DBG(RUNNING_LEVEL, "TCP client thread created, thread ID[%lu]\n", pthread_self());
 
     /* process client's requests */
     memset(s, '\0', 100);
-    while ((n = (read(client, s, 100)) ) > 0)
+    while ((readnum = (read(client, s, 100)) ) > 0)
     {
         if (s[0] == 'Q')
         {
             break;
         }
 
-        PRINTF_DBG(RUNNING_LEVEL, "msg: %s", s);
-        write(client, s, n);
-        memset(s,'\0', n);
+        PRINTF_DBG(DEBUG_LEVEL, "msg: %s\n", s);
+        writenum = write(client, s, readnum);
+        PRINTF_DBG(DEBUG_LEVEL, "writenum = %d\n", writenum);
+        
+        memset(s,'\0', readnum);
     }
 
     close(client);
@@ -122,6 +125,8 @@ int main(int argv, char *args[])
         printf("usage: %s <protocol or portnum>\n", args[0]);
         exit(0);
     }
+
+    signal(SIGPIPE, SIG_IGN);   //---ignore the SIGPIPE signal which is caused by writing a closed socket
 
     /* Get server's IP and standard service connection */
     if (!isdigit(args[1][0]))
@@ -200,48 +205,4 @@ int main(int argv, char *args[])
 }
 
 
-#if 0
-int main(int argc, char**argv)
-{
-    int ret;
-
-    signal(SIGPIPE, SIG_IGN);   //---ignore the SIGPIPE signal which is caused by writing a closed socket
-
-    if (argc != 2)
-    {
-        printf("usage:  client <IP address>\n");
-        exit(1);
-    }
-
-    ret = inet_addr(argv[1]);
-    if (INADDR_NONE == ret)
-    {
-        printf("wrong parameter, %s\n", argv[1]);
-        printf("usage:  client <IP address>\n");
-        exit(1);
-    }
-
-    strcpy(dstIpStr, argv[1]);
-
-
-   ret = pthread_create(&tClientThread, NULL, tclient_thread, NULL);
-   if (ret != 0) 
-   {
-       PRINTF_DBG(ERROR_LEVEL, "Create tClientThread failed, %s\n", strerror(errno));
-       exit(1);
-   }
-
-    ret = pthread_join(tClientThread, (void *)NULL);
-    if (ret != 0) 
-    {
-        PRINTF_DBG(ERROR_LEVEL, "join tClientThread failed: %s\n", strerror(errno));
-
-        /* this exit will cause all the threads to be terminated */
-        exit(1);
-    }   
-
-
-
-}
-#endif
 
